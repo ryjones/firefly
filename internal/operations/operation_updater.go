@@ -93,6 +93,43 @@ func (ou *operationUpdater) pickWorker(ctx context.Context, id *fftypes.UUID, up
 	return ou.workQueues[worker]
 }
 
+// SubmitBulkOperationUpdates will wait for the commit to DB before calling the onCommit
+func (ou *operationUpdater) SubmitBulkOperationUpdates(ctx context.Context, updates []*core.OperationUpdate, onCommit chan<- bool) {
+	validUpdates := []*core.OperationUpdate{}
+	for _, update := range updates {
+		ns, _, err := core.ParseNamespacedOpID(ctx, update.NamespacedOpID)
+		if err != nil {
+			log.L(ctx).Warnf("Unable to update operation '%s' due to invalid ID: %s", update.NamespacedOpID, err)
+			continue
+		}
+
+		if ns != ou.manager.namespace {
+			log.L(ou.ctx).Debugf("Ignoring operation update from different namespace '%s'", ns)
+			continue
+		}
+
+		validUpdates = append(validUpdates, update)
+	}
+
+	// Notice how this is not using the workers
+	// The reason is because we want for all updates to be stored at once in this order
+	// If offloaded into worker the updates would be processed in parallel, in different DB TX and in a different order
+	go func() {
+		// Copy of the array
+		updates := validUpdates
+		// This retries forever until there is no error
+		// but returns on cancelled context
+		err := ou.doBatchUpdateWithRetry(ctx, updates)
+		if err != nil {
+			log.L(ctx).Warnf("Exiting while updating operation: %s", err)
+		}
+		// Batch has been updated correctly
+		if onCommit != nil {
+			onCommit <- true
+		}
+	}()
+}
+
 func (ou *operationUpdater) SubmitOperationUpdate(ctx context.Context, update *core.OperationUpdate) {
 	ns, id, err := core.ParseNamespacedOpID(ctx, update.NamespacedOpID)
 	if err != nil {

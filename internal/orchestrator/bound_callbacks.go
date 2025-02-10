@@ -1,4 +1,4 @@
-// Copyright © 2023 Kaleido, Inc.
+// Copyright © 2025 Kaleido, Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -39,6 +39,10 @@ func (bc *boundCallbacks) checkStopped() error {
 		return i18n.NewError(bc.o.ctx, coremsgs.MsgNamespaceNotStarted, bc.o.namespace.Name)
 	}
 	return nil
+}
+
+func (bc *boundCallbacks) BulkOperationUpdates(ctx context.Context, updates []*core.OperationUpdate, onCommit chan<- bool) {
+	bc.o.operations.SubmitBulkOperationUpdates(ctx, updates, onCommit)
 }
 
 func (bc *boundCallbacks) OperationUpdate(update *core.OperationUpdate) {
